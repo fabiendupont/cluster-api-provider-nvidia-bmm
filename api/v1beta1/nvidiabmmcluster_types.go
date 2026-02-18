@@ -1,0 +1,216 @@
+package v1beta1
+
+import (
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+)
+
+// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
+// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+
+// NvidiaBMMClusterSpec defines the desired state of NvidiaBMMCluster
+type NvidiaBMMClusterSpec struct {
+	// SiteRef references the NVIDIA BMM Site where the cluster will be provisioned
+	// +required
+	SiteRef SiteReference `json:"siteRef"`
+
+	// TenantID is the NVIDIA BMM tenant ID for multi-tenancy
+	// +required
+	TenantID string `json:"tenantID"`
+
+	// VPC configuration for the cluster network
+	// +required
+	VPC VPCSpec `json:"vpc"`
+
+	// Subnets for control-plane and worker nodes
+	// +kubebuilder:validation:MinItems=1
+	// +required
+	Subnets []SubnetSpec `json:"subnets"`
+
+	// ControlPlaneEndpoint represents the endpoint used to communicate with the control plane
+	// +optional
+	ControlPlaneEndpoint *clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
+
+	// Authentication contains credentials for accessing the NVIDIA BMM API
+	// +required
+	Authentication AuthenticationSpec `json:"authentication"`
+}
+
+// SiteReference references an NVIDIA BMM Site
+type SiteReference struct {
+	// Name references a Site CRD in the same namespace
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// ID directly specifies the Site UUID
+	// +optional
+	ID string `json:"id,omitempty"`
+}
+
+// VPCSpec defines the VPC configuration
+type VPCSpec struct {
+	// Name of the VPC
+	// +required
+	Name string `json:"name"`
+
+	// NetworkVirtualizationType specifies the network virtualization type
+	// Valid values: ETHERNET_VIRTUALIZER, FNN
+	// +kubebuilder:validation:Enum=ETHERNET_VIRTUALIZER;FNN
+	// +required
+	NetworkVirtualizationType string `json:"networkVirtualizationType"`
+
+	// Labels to apply to the VPC
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// NetworkSecurityGroup configuration
+	// +optional
+	NetworkSecurityGroup *NSGSpec `json:"networkSecurityGroup,omitempty"`
+}
+
+// NSGSpec defines Network Security Group configuration
+type NSGSpec struct {
+	// Name of the Network Security Group
+	// +required
+	Name string `json:"name"`
+
+	// Rules for the Network Security Group
+	// +optional
+	Rules []NSGRule `json:"rules,omitempty"`
+}
+
+// NSGRule defines a single security rule
+type NSGRule struct {
+	// Name of the rule
+	// +required
+	Name string `json:"name"`
+
+	// Direction of traffic (ingress or egress)
+	// +kubebuilder:validation:Enum=ingress;egress
+	// +required
+	Direction string `json:"direction"`
+
+	// Protocol (tcp, udp, icmp, or all)
+	// +kubebuilder:validation:Enum=tcp;udp;icmp;all
+	// +required
+	Protocol string `json:"protocol"`
+
+	// PortRange specifies the port range (e.g., "80", "1000-2000")
+	// +optional
+	PortRange string `json:"portRange,omitempty"`
+
+	// SourceCIDR specifies the source IP range
+	// +optional
+	SourceCIDR string `json:"sourceCIDR,omitempty"`
+
+	// Action to take (allow or deny)
+	// +kubebuilder:validation:Enum=allow;deny
+	// +required
+	Action string `json:"action"`
+}
+
+// SubnetSpec defines a subnet configuration
+type SubnetSpec struct {
+	// Name of the subnet
+	// +required
+	Name string `json:"name"`
+
+	// CIDR block for the subnet
+	// +required
+	CIDR string `json:"cidr"`
+
+	// Role of the subnet (control-plane or worker)
+	// +kubebuilder:validation:Enum=control-plane;worker
+	// +optional
+	Role string `json:"role,omitempty"`
+
+	// Labels to apply to the subnet
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// AuthenticationSpec contains credentials for NVIDIA BMM API
+type AuthenticationSpec struct {
+	// SecretRef references a Secret containing NVIDIA BMM credentials
+	// The secret must contain: endpoint, orgName, token
+	// +required
+	SecretRef corev1.SecretReference `json:"secretRef"`
+}
+
+// NvidiaBMMClusterStatus defines the observed state of NvidiaBMMCluster.
+type NvidiaBMMClusterStatus struct {
+	// Ready indicates if the cluster infrastructure is ready
+	// +optional
+	Ready bool `json:"ready"`
+
+	// VPCID is the NVIDIA BMM VPC ID
+	// +optional
+	VPCID string `json:"vpcID,omitempty"`
+
+	// NetworkStatus contains the network infrastructure status
+	// +optional
+	NetworkStatus NetworkStatus `json:"networkStatus,omitempty"`
+
+	// Conditions represent the current state of the NvidiaBMMCluster
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// NetworkStatus contains network infrastructure status
+type NetworkStatus struct {
+	// SubnetIDs maps subnet names to their IDs
+	// +optional
+	SubnetIDs map[string]string `json:"subnetIDs,omitempty"`
+
+	// NSGID is the Network Security Group ID
+	// +optional
+	NSGID string `json:"nsgID,omitempty"`
+
+	// IPBlockID is the NVIDIA BMM IP Block ID used for subnet allocation
+	// +optional
+	IPBlockID string `json:"ipBlockID,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+
+// NvidiaBMMCluster is the Schema for the nvidiabmmclusters API
+type NvidiaBMMCluster struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// metadata is a standard object metadata
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitzero"`
+
+	// spec defines the desired state of NvidiaBMMCluster
+	// +required
+	Spec NvidiaBMMClusterSpec `json:"spec"`
+
+	// status defines the observed state of NvidiaBMMCluster
+	// +optional
+	Status NvidiaBMMClusterStatus `json:"status,omitzero"`
+}
+
+// +kubebuilder:object:root=true
+
+// NvidiaBMMClusterList contains a list of NvidiaBMMCluster
+type NvidiaBMMClusterList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitzero"`
+	Items           []NvidiaBMMCluster `json:"items"`
+}
+
+// GetConditions returns the conditions from the status
+func (c *NvidiaBMMCluster) GetConditions() []metav1.Condition {
+	return c.Status.Conditions
+}
+
+// SetConditions sets the conditions in the status
+func (c *NvidiaBMMCluster) SetConditions(conditions []metav1.Condition) {
+	c.Status.Conditions = conditions
+}
+
+func init() {
+	SchemeBuilder.Register(&NvidiaBMMCluster{}, &NvidiaBMMClusterList{})
+}

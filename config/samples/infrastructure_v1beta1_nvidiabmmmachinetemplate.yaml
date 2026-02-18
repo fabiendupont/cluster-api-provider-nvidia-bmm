@@ -1,0 +1,9 @@
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: NvidiaBMMMachineTemplate
+metadata:
+  labels:
+    app.kubernetes.io/name: cluster-api-provider-nvidia-bmm
+    app.kubernetes.io/managed-by: kustomize
+  name: nvidiabmmmachinetemplate-sample
+spec:
+  # TODO(user): Add fields here
