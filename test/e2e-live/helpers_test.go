@@ -228,7 +228,7 @@ func setupSiteViaAPI(token, orgName, prefix string) (siteID, tenantID string) {
 		"tenantId": tenantID,
 		"siteId":   siteID,
 		"allocationConstraints": []map[string]interface{}{
-			{"resourceType": "IPBlock", "resourceTypeId": ipBlockID, "constraintType": "OnDemand", "constraintValue": 1},
+			{"resourceType": "IPBlock", "resourceTypeId": ipBlockID, "constraintType": "OnDemand", "constraintValue": 24},
 		},
 	})
 	Expect(status).To(Equal(http.StatusCreated), "Failed to create allocation: %v", allocResult)
