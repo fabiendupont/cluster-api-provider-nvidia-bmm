@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -197,6 +198,17 @@ func getExistingSiteID(token, orgName string) string {
 	return siteID
 }
 
+// ensureSiteRegistered ensures the site is in Registered state.
+// The site-agent registration workflow may not have completed yet.
+func ensureSiteRegistered(siteID string) {
+	cmd := exec.Command("kubectl", "exec", "-n", "postgres", "statefulset/postgres", "--",
+		"psql", "-U", "forge", "-d", "forge", "-c",
+		fmt.Sprintf("UPDATE site SET status = 'Registered' WHERE id = '%s' AND status != 'Registered'", siteID))
+	output, err := cmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "Failed to ensure site is registered: %s", string(output))
+	_, _ = fmt.Fprintf(GinkgoWriter, "Ensured site %s is Registered\n", siteID)
+}
+
 // setupSiteViaAPI finds the existing site and creates the tenant resources needed
 // for the cluster controller: Tenant -> IP Block -> Allocation.
 // Returns siteID and tenantID. The controller will create VPCs/subnets itself.
@@ -205,6 +217,9 @@ func setupSiteViaAPI(token, orgName, prefix string) (siteID, tenantID string) {
 
 	// Use the existing site (has a connected site-agent for Temporal workflows)
 	siteID = getExistingSiteID(token, orgName)
+
+	// Ensure site is in Registered state (the site-agent registration may not have completed yet)
+	ensureSiteRegistered(siteID)
 
 	// Get or create Tenant (idempotent)
 	carbideAPIRequest("POST", apiBase+"/tenant", token, map[string]interface{}{"org": orgName})
