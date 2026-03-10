@@ -293,53 +293,107 @@ func parseCIDR(cidr string) (network string, prefixLength int, err error) {
 	return networkAddr, ones, nil
 }
 
-// ensureIPBlock ensures an IP block exists for subnet allocation
-// This creates a shared IP block for all subnets in the cluster
-func (r *NvidiaCarbideClusterReconciler) ensureIPBlock(
+// ensureIPBlockAndAllocation ensures an IP block and allocation exist for subnet allocation.
+// The allocation creates a child IP block owned by the tenant, which must be used for subnets.
+// Returns the child IP block ID.
+func (r *NvidiaCarbideClusterReconciler) ensureIPBlockAndAllocation(
 	ctx context.Context, clusterScope *scope.ClusterScope, siteID string,
 ) (string, error) {
 	logger := log.FromContext(ctx)
 
-	// Check if we already have an IP block
-	if clusterScope.IPBlockID() != "" {
-		// Verify it still exists
-		ipBlock, _, err := clusterScope.NvidiaCarbideClient.GetIpblock(ctx, clusterScope.OrgName, clusterScope.IPBlockID())
+	// If we already have a child IP block ID, verify it exists
+	if clusterScope.ChildIPBlockID() != "" {
+		ipBlock, _, err := clusterScope.NvidiaCarbideClient.GetIpblock(ctx, clusterScope.OrgName, clusterScope.ChildIPBlockID())
 		if err == nil && ipBlock != nil {
-			logger.V(1).Info("IP block already exists", "ipBlockID", clusterScope.IPBlockID())
-			return clusterScope.IPBlockID(), nil
+			logger.V(1).Info("Child IP block already exists", "childIPBlockID", clusterScope.ChildIPBlockID())
+			return clusterScope.ChildIPBlockID(), nil
 		}
-		logger.Info("Existing IP block not found, will create new one", "oldIPBlockID", clusterScope.IPBlockID())
+		logger.Info("Existing child IP block not found, will recreate", "oldChildIPBlockID", clusterScope.ChildIPBlockID())
+		clusterScope.SetChildIPBlockID("")
+		clusterScope.SetAllocationID("")
 	}
 
-	// Create a new IP block for this cluster's subnets
-	ipBlockName := fmt.Sprintf("%s-ipblock", clusterScope.NvidiaCarbideCluster.Name)
-	ipBlockReq := bmm.IpBlockCreateRequest{
-		Name:            ipBlockName,
-		Prefix:          "10.0.0.0",
-		PrefixLength:    16,
-		ProtocolVersion: "ipv4",
-		RoutingType:     "datacenter_only",
-		SiteId:          siteID,
+	// Step 1: Create parent IP block if needed
+	parentIPBlockID := clusterScope.IPBlockID()
+	if parentIPBlockID == "" {
+		ipBlockName := fmt.Sprintf("%s-ipblock", clusterScope.NvidiaCarbideCluster.Name)
+		ipBlockReq := bmm.IpBlockCreateRequest{
+			Name:            ipBlockName,
+			Prefix:          "10.0.0.0",
+			PrefixLength:    16,
+			ProtocolVersion: "IPv4",
+			RoutingType:     "DatacenterOnly",
+			SiteId:          siteID,
+		}
+
+		logger.Info("Creating IP block", "name", ipBlockName, "prefix", "10.0.0.0/16", "siteID", siteID)
+		ipBlock, httpResp, err := clusterScope.NvidiaCarbideClient.CreateIpblock(ctx, clusterScope.OrgName, ipBlockReq)
+		if err != nil {
+			return "", fmt.Errorf("failed to create IP block: %w", err)
+		}
+		if httpResp.StatusCode != http.StatusCreated {
+			return "", fmt.Errorf("failed to create IP block, status %d", httpResp.StatusCode)
+		}
+		if ipBlock == nil || ipBlock.Id == nil {
+			return "", fmt.Errorf("IP block ID missing in response")
+		}
+
+		parentIPBlockID = *ipBlock.Id
+		clusterScope.SetIPBlockID(parentIPBlockID)
+		logger.Info("Successfully created IP block", "ipBlockID", parentIPBlockID)
 	}
 
-	logger.Info("Creating IP block", "name", ipBlockName, "prefix", "10.0.0.0/16", "siteID", siteID)
-	ipBlock, httpResp, err := clusterScope.NvidiaCarbideClient.CreateIpblock(ctx, clusterScope.OrgName, ipBlockReq)
-	if err != nil {
-		return "", fmt.Errorf("failed to create IP block: %w", err)
+	// Step 2: Create allocation to link tenant to IP block (creates child IP block)
+	if clusterScope.AllocationID() == "" {
+		allocName := fmt.Sprintf("%s-allocation", clusterScope.NvidiaCarbideCluster.Name)
+		resourceType := "IPBlock"
+		allocReq := bmm.AllocationCreateRequest{
+			Name:     allocName,
+			TenantId: clusterScope.TenantID(),
+			SiteId:   siteID,
+			AllocationConstraints: []bmm.AllocationConstraintCreateRequest{
+				{
+					ResourceType:    &resourceType,
+					ResourceTypeId:  parentIPBlockID,
+					ConstraintType:  "OnDemand",
+					ConstraintValue: 24,
+				},
+			},
+		}
+
+		logger.Info("Creating allocation", "name", allocName, "tenantID", clusterScope.TenantID(), "siteID", siteID)
+		alloc, httpResp, err := clusterScope.NvidiaCarbideClient.CreateAllocation(ctx, clusterScope.OrgName, allocReq)
+		if err != nil {
+			return "", fmt.Errorf("failed to create allocation: %w", err)
+		}
+		if httpResp.StatusCode != http.StatusCreated {
+			return "", fmt.Errorf("failed to create allocation, status %d", httpResp.StatusCode)
+		}
+		if alloc == nil || alloc.Id == nil {
+			return "", fmt.Errorf("allocation ID missing in response")
+		}
+
+		clusterScope.SetAllocationID(*alloc.Id)
+		logger.Info("Successfully created allocation", "allocationID", *alloc.Id)
+
+		// Extract child IP block ID from allocation constraints
+		for _, ac := range alloc.AllocationConstraints {
+			if ac.ResourceType != nil && *ac.ResourceType == "IPBlock" {
+				if derivedID := ac.DerivedResourceId.Get(); derivedID != nil {
+					clusterScope.SetChildIPBlockID(*derivedID)
+					logger.Info("Child IP block created", "childIPBlockID", *derivedID)
+					break
+				}
+			}
+		}
 	}
 
-	if httpResp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("failed to create IP block, status %d", httpResp.StatusCode)
+	childIPBlockID := clusterScope.ChildIPBlockID()
+	if childIPBlockID == "" {
+		return "", fmt.Errorf("child IP block ID not found after allocation creation")
 	}
 
-	if ipBlock == nil || ipBlock.Id == nil {
-		return "", fmt.Errorf("IP block ID missing in response")
-	}
-
-	clusterScope.SetIPBlockID(*ipBlock.Id)
-	logger.Info("Successfully created IP block", "ipBlockID", *ipBlock.Id)
-
-	return *ipBlock.Id, nil
+	return childIPBlockID, nil
 }
 
 func (r *NvidiaCarbideClusterReconciler) reconcileSubnets(
@@ -352,10 +406,10 @@ func (r *NvidiaCarbideClusterReconciler) reconcileSubnets(
 		return fmt.Errorf("VPC ID is empty")
 	}
 
-	// Ensure IP block exists for subnet allocation
-	ipBlockID, err := r.ensureIPBlock(ctx, clusterScope, siteID)
+	// Ensure IP block and allocation exist (creates child IP block for tenant)
+	childIPBlockID, err := r.ensureIPBlockAndAllocation(ctx, clusterScope, siteID)
 	if err != nil {
-		return fmt.Errorf("failed to ensure IP block: %w", err)
+		return fmt.Errorf("failed to ensure IP block and allocation: %w", err)
 	}
 
 	subnetIDs := clusterScope.SubnetIDs()
@@ -382,18 +436,18 @@ func (r *NvidiaCarbideClusterReconciler) reconcileSubnets(
 			return fmt.Errorf("failed to parse CIDR for subnet %s: %w", subnetSpec.Name, err)
 		}
 
-		// Create subnet using IP block
+		// Create subnet using child IP block (tenant-owned, from allocation)
 		subnetReq := bmm.SubnetCreateRequest{
 			Name:         subnetSpec.Name,
 			VpcId:        vpcID,
-			Ipv4BlockId:  &ipBlockID,
+			Ipv4BlockId:  &childIPBlockID,
 			PrefixLength: int32(prefixLength),
 		}
 
 		logger.Info("Creating subnet",
 			"name", subnetSpec.Name, "cidr", subnetSpec.CIDR,
 			"prefixLength", prefixLength, "vpcID", vpcID,
-			"ipBlockID", ipBlockID)
+			"childIPBlockID", childIPBlockID)
 		subnet, httpResp, err := clusterScope.NvidiaCarbideClient.CreateSubnet(ctx, clusterScope.OrgName, subnetReq)
 		if err != nil {
 			return fmt.Errorf("failed to create subnet %s: %w", subnetSpec.Name, err)

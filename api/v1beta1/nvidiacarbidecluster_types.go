@@ -186,6 +186,14 @@ type NetworkStatus struct {
 	// IPBlockID is the NVIDIA Carbide IP Block ID used for subnet allocation
 	// +optional
 	IPBlockID string `json:"ipBlockID,omitempty"`
+
+	// AllocationID is the NVIDIA Carbide Allocation ID
+	// +optional
+	AllocationID string `json:"allocationID,omitempty"`
+
+	// ChildIPBlockID is the tenant-owned child IP block derived from the allocation
+	// +optional
+	ChildIPBlockID string `json:"childIPBlockID,omitempty"`
 }
 
 // +kubebuilder:object:root=true

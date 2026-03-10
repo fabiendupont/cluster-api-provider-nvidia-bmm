@@ -55,6 +55,9 @@ type NvidiaCarbideClientInterface interface {
 	) (*bmm.NetworkSecurityGroup, *http.Response, error)
 	DeleteNetworkSecurityGroup(ctx context.Context, org string, nsgId string) (*http.Response, error)
 
+	// Allocation
+	CreateAllocation(ctx context.Context, org string, req bmm.AllocationCreateRequest) (*bmm.Allocation, *http.Response, error)
+
 	// Instance
 	CreateInstance(ctx context.Context, org string, req bmm.InstanceCreateRequest) (*bmm.Instance, *http.Response, error)
 	GetInstance(ctx context.Context, org string, instanceId string) (*bmm.Instance, *http.Response, error)
@@ -125,6 +128,13 @@ func (c *carbideClient) DeleteNetworkSecurityGroup(ctx context.Context, org, nsg
 }
 
 // Instance methods
+
+func (c *carbideClient) CreateAllocation(
+	ctx context.Context, org string, req bmm.AllocationCreateRequest,
+) (*bmm.Allocation, *http.Response, error) {
+	return c.client.AllocationAPI.CreateAllocation(c.authCtx(ctx), org).AllocationCreateRequest(req).Execute()
+}
+
 func (c *carbideClient) CreateInstance(
 	ctx context.Context, org string, req bmm.InstanceCreateRequest,
 ) (*bmm.Instance, *http.Response, error) {
@@ -314,6 +324,23 @@ func (s *ClusterScope) IPBlockID() string {
 // SetIPBlockID sets the IP block ID in status
 func (s *ClusterScope) SetIPBlockID(ipBlockID string) {
 	s.NvidiaCarbideCluster.Status.NetworkStatus.IPBlockID = ipBlockID
+}
+
+
+func (s *ClusterScope) AllocationID() string {
+	return s.NvidiaCarbideCluster.Status.NetworkStatus.AllocationID
+}
+
+func (s *ClusterScope) SetAllocationID(allocationID string) {
+	s.NvidiaCarbideCluster.Status.NetworkStatus.AllocationID = allocationID
+}
+
+func (s *ClusterScope) ChildIPBlockID() string {
+	return s.NvidiaCarbideCluster.Status.NetworkStatus.ChildIPBlockID
+}
+
+func (s *ClusterScope) SetChildIPBlockID(childIPBlockID string) {
+	s.NvidiaCarbideCluster.Status.NetworkStatus.ChildIPBlockID = childIPBlockID
 }
 
 // PatchObject persists the cluster status

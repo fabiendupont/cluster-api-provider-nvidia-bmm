@@ -69,6 +69,11 @@ type MockCarbideClient struct {
 		ctx context.Context, org string, nsgId string,
 	) (*http.Response, error)
 
+	// Allocation methods
+	CreateAllocationFunc func(
+		ctx context.Context, org string, req bmm.AllocationCreateRequest,
+	) (*bmm.Allocation, *http.Response, error)
+
 	// IP Block methods
 	CreateIpblockFunc func(
 		ctx context.Context, org string, req bmm.IpBlockCreateRequest,
@@ -188,6 +193,16 @@ func (m *MockCarbideClient) DeleteNetworkSecurityGroup(
 		return m.DeleteNetworkSecurityGroupFunc(ctx, org, nsgId)
 	}
 	return nil, nil
+}
+
+// Allocation methods
+func (m *MockCarbideClient) CreateAllocation(
+	ctx context.Context, org string, req bmm.AllocationCreateRequest,
+) (*bmm.Allocation, *http.Response, error) {
+	if m.CreateAllocationFunc != nil {
+		return m.CreateAllocationFunc(ctx, org, req)
+	}
+	return nil, nil, nil
 }
 
 // IPBlock methods
