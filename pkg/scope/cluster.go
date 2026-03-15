@@ -63,6 +63,9 @@ type NvidiaCarbideClientInterface interface {
 	GetAllAllocation(ctx context.Context, org string) ([]bmm.Allocation, *http.Response, error)
 	DeleteAllocation(ctx context.Context, org string, allocationId string) (*http.Response, error)
 
+	// Site
+	GetAllSite(ctx context.Context, org string) ([]bmm.Site, *http.Response, error)
+
 	// Instance List (for duplicate prevention)
 	GetAllInstance(ctx context.Context, org string) ([]bmm.Instance, *http.Response, error)
 
@@ -155,6 +158,12 @@ func (c *carbideClient) GetAllAllocation(ctx context.Context, org string) ([]bmm
 }
 func (c *carbideClient) DeleteAllocation(ctx context.Context, org, allocationId string) (*http.Response, error) {
 	return c.client.AllocationAPI.DeleteAllocation(c.authCtx(ctx), org, allocationId).Execute()
+}
+
+// Site methods
+
+func (c *carbideClient) GetAllSite(ctx context.Context, org string) ([]bmm.Site, *http.Response, error) {
+	return c.client.SiteAPI.GetAllSite(c.authCtx(ctx), org).Execute()
 }
 
 // Instance methods
@@ -277,11 +286,21 @@ func (s *ClusterScope) SiteID(ctx context.Context) (string, error) {
 		return s.NvidiaCarbideCluster.Spec.SiteRef.ID, nil
 	}
 
-	// TODO: Fetch Site CRD and extract UUID
-	// This requires importing the Site CRD type from carbide-rest/site-manager
-	// For now, return an error if name-based reference is used
+	// Resolve site name to UUID via the Carbide API
 	if s.NvidiaCarbideCluster.Spec.SiteRef.Name != "" {
-		return "", fmt.Errorf("site name reference not yet implemented, please use direct ID")
+		sites, _, err := s.NvidiaCarbideClient.GetAllSite(ctx, s.OrgName)
+		if err != nil {
+			return "", fmt.Errorf("failed to list sites: %w", err)
+		}
+		for _, site := range sites {
+			if site.Name != nil && *site.Name == s.NvidiaCarbideCluster.Spec.SiteRef.Name {
+				if site.Id == nil {
+					return "", fmt.Errorf("site %q found but has no ID", s.NvidiaCarbideCluster.Spec.SiteRef.Name)
+				}
+				return *site.Id, nil
+			}
+		}
+		return "", fmt.Errorf("site %q not found", s.NvidiaCarbideCluster.Spec.SiteRef.Name)
 	}
 
 	return "", fmt.Errorf("site reference is empty")

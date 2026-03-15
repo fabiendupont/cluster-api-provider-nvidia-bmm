@@ -52,8 +52,10 @@ const (
 
 // Condition types
 const (
-	InstanceProvisionedCondition clusterv1.ConditionType = "InstanceProvisioned"
-	NetworkConfiguredCondition   clusterv1.ConditionType = "NetworkConfigured"
+	InstanceProvisionedCondition  clusterv1.ConditionType = "InstanceProvisioned"
+	InstanceProvisioningCondition clusterv1.ConditionType = "InstanceProvisioning"
+	NetworkConfiguredCondition    clusterv1.ConditionType = "NetworkConfigured"
+	BootstrapDataAppliedCondition clusterv1.ConditionType = "BootstrapDataApplied"
 )
 
 // NvidiaCarbideMachineReconciler reconciles a NvidiaCarbideMachine object
@@ -251,8 +253,19 @@ func (r *NvidiaCarbideMachineReconciler) createInstance(
 	// Get bootstrap data
 	bootstrapData, err := machineScope.GetBootstrapData(ctx)
 	if err != nil {
+		conditions.Set(machineScope.NvidiaCarbideMachine, metav1.Condition{
+			Type:    string(BootstrapDataAppliedCondition),
+			Status:  metav1.ConditionFalse,
+			Reason:  "BootstrapDataFailed",
+			Message: err.Error(),
+		})
 		return fmt.Errorf("failed to get bootstrap data: %w", err)
 	}
+	conditions.Set(machineScope.NvidiaCarbideMachine, metav1.Condition{
+		Type:   string(BootstrapDataAppliedCondition),
+		Status: metav1.ConditionTrue,
+		Reason: "BootstrapDataReady",
+	})
 
 	// Get subnet ID for primary network interface
 	subnetID, err := machineScope.GetSubnetID()
@@ -471,20 +484,34 @@ func (r *NvidiaCarbideMachineReconciler) reconcileInstance(
 	if instance.Status != nil && string(*instance.Status) == "Ready" {
 		machineScope.SetReady(true)
 		conditions.Set(machineScope.NvidiaCarbideMachine, metav1.Condition{
+			Type:   string(InstanceProvisioningCondition),
+			Status: metav1.ConditionFalse,
+			Reason: "ProvisioningComplete",
+		})
+		conditions.Set(machineScope.NvidiaCarbideMachine, metav1.Condition{
 			Type:   string(clusterv1.ReadyCondition),
 			Status: metav1.ConditionTrue,
 			Reason: "NvidiaCarbideMachineReady",
 		})
 
-		// For first control plane machine, update cluster endpoint if not set
+		// Set control plane endpoint if not already configured.
+		// If a load balancer VIP is pre-configured in ControlPlaneEndpoint,
+		// it takes precedence over individual machine addresses.
+		// For HA control planes, the first ready machine sets the endpoint
+		// when no VIP is configured; subsequent machines don't overwrite it.
 		cpEndpoint := clusterScope.NvidiaCarbideCluster.Spec.ControlPlaneEndpoint
 		if machineScope.IsControlPlane() && (cpEndpoint == nil || cpEndpoint.Host == "") {
 			if len(addresses) > 0 {
+				port := int32(6443)
+				if cpEndpoint != nil && cpEndpoint.Port != 0 {
+					port = cpEndpoint.Port
+				}
 				clusterScope.NvidiaCarbideCluster.Spec.ControlPlaneEndpoint = &clusterv1.APIEndpoint{
 					Host: addresses[0].Address,
-					Port: 6443,
+					Port: port,
 				}
-				logger.Info("Updated control plane endpoint", "host", addresses[0].Address)
+				logger.Info("Updated control plane endpoint from first ready control plane machine",
+					"host", addresses[0].Address, "port", port)
 			}
 		}
 
@@ -507,6 +534,14 @@ func (r *NvidiaCarbideMachineReconciler) reconcileInstance(
 	if instance.Status != nil {
 		statusStr = string(*instance.Status)
 	}
+
+	conditions.Set(machineScope.NvidiaCarbideMachine, metav1.Condition{
+		Type:    string(InstanceProvisioningCondition),
+		Status:  metav1.ConditionTrue,
+		Reason:  "WaitingForReady",
+		Message: fmt.Sprintf("Instance %s is in state %s", instanceIDStr, statusStr),
+	})
+
 	logger.Info("Waiting for instance to be ready",
 		"instanceID", instanceIDStr,
 		"status", statusStr)

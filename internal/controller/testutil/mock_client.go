@@ -94,6 +94,11 @@ type MockCarbideClient struct {
 		ctx context.Context, org string, ipBlockId string,
 	) (*http.Response, error)
 
+	// Site methods
+	GetAllSiteFunc func(
+		ctx context.Context, org string,
+	) ([]bmm.Site, *http.Response, error)
+
 	// Instance list
 	GetAllInstanceFunc func(
 		ctx context.Context, org string,
@@ -275,6 +280,16 @@ func (m *MockCarbideClient) DeleteIpblock(
 		return m.DeleteIpblockFunc(ctx, org, ipBlockId)
 	}
 	return nil, nil
+}
+
+// Site methods
+func (m *MockCarbideClient) GetAllSite(
+	ctx context.Context, org string,
+) ([]bmm.Site, *http.Response, error) {
+	if m.GetAllSiteFunc != nil {
+		return m.GetAllSiteFunc(ctx, org)
+	}
+	return nil, nil, nil
 }
 
 func (m *MockCarbideClient) GetAllInstance(

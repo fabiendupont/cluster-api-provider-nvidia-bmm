@@ -198,6 +198,14 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "NvidiaCarbideMachine")
 		os.Exit(1)
 	}
+	if err := (&infrastructurev1beta1.NvidiaCarbideCluster{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "NvidiaCarbideCluster")
+		os.Exit(1)
+	}
+	if err := (&infrastructurev1beta1.NvidiaCarbideMachine{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "NvidiaCarbideMachine")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
