@@ -3,7 +3,7 @@ module github.com/fabiendupont/cluster-api-provider-nvidia-ncx-infra-controller
 go 1.25.4
 
 require (
-	github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard v0.0.0-00010101000000-000000000000
+	github.com/NVIDIA/ncx-infra-controller-rest v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.39.0
@@ -110,6 +110,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.1 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
-
-// Local replace until upstream tags a release
-replace github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard => /home/fdupont/Code/github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard
